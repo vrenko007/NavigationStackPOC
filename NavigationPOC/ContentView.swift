@@ -116,7 +116,10 @@ enum Tab: Hashable {
 struct Root {
   @ObservableState
   struct State {
-    var path = StackState<Path.State>()
+    var paths: [Tab: StackState<Path.State>] = [
+      .tab1: .init(),
+      .tab2: .init()
+    ]
     let child1 = Screen.State(text: Shared("Some String"))
     let child2 = Screen.State(text: Shared("Some String"))
 
@@ -147,21 +150,21 @@ struct Root {
       case let .selectTab(tab):
         state.selectedTab = tab
       case let .child2(.navigate(text)):
-        state.path.append(.flowB(.flowBA(.screen1(.init(text: text)))))
+        state.paths[state.selectedTab]?.append(.flowB(.flowBA(.screen1(.init(text: text)))))
       case let .child1(.navigate(text)):
-        state.path.append(.flowA(.screen1(.init(text: text))))
+        state.paths[state.selectedTab]?.append(.flowA(.screen1(.init(text: text))))
       case let .path(.element(id: _, action: .flowA(.screen1(.navigate(text))))):
-        state.path.append(.flowA(.screen2(.init(text: text))))
+        state.paths[state.selectedTab]?.append(.flowA(.screen2(.init(text: text))))
       case let .path(.element(id: _, action: .flowA(.screen2(.navigate(text))))):
-        state.path.append(.flowA(.screen3(.init(text: text))))
+        state.paths[state.selectedTab]?.append(.flowA(.screen3(.init(text: text))))
       case let .path(.element(id: _, action: .flowA(.screen3(.navigate(text))))):
-        state.path.append(.flowA(.screen4(.init(text: text))))
+        state.paths[state.selectedTab]?.append(.flowA(.screen4(.init(text: text))))
       case let .path(.element(id: _, action: .flowA(.screen4(.navigate(text))))):
-        state.path.append(.flowB(.flowBB(.screen1(.init(text: text)))))
+        state.paths[state.selectedTab]?.append(.flowB(.flowBB(.screen1(.init(text: text)))))
       case let .path(.element(id: _, action: .flowB(.flowBA(.screen1(.navigate(text)))))):
-        state.path.append(.flowB(.flowBA(.screen2(.init(text: text)))))
+        state.paths[state.selectedTab]?.append(.flowB(.flowBA(.screen2(.init(text: text)))))
       case let .path(.element(id: _, action: .flowB(.flowBA(.screen2(.navigate(text)))))):
-        state.path.append(.flowB(.flowBB(.screen1(.init(text: text)))))
+        state.paths[state.selectedTab]?.append(.flowB(.flowBB(.screen1(.init(text: text)))))
       case .destination(.presented(.modal(.navigate))):
         state.destination = nil
       case .path, .child1, .child2, .destination:
@@ -169,7 +172,8 @@ struct Root {
       }
       return .none
     }
-    .forEach(\.path, action: \.path)
+    .forEach(\.paths[.tab1]!, action: \.path)
+    .forEach(\.paths[.tab2]!, action: \.path)
     .ifLet(\.$destination, action: \.destination)
   }
 
@@ -181,83 +185,98 @@ struct ContentView: View {
   @Bindable var store = Store(
     initialState: Root.State()) {
       Root()
+        ._printChanges()
     }
 
-  var rootTitle: String {
-    switch store.selectedTab {
-    case .tab1:
-      return "Root Tab1"
-    case .tab2:
-      return "Root Tab2"
+  @ViewBuilder
+  private func destination(path: StoreOf<Path>) -> some View {
+    switch path.case {
+    case let .flowA(flowA):
+      switch flowA.case {
+      case let .screen1(child):
+        ShowView(store: child)
+          .navigationTitle("flowA screen1")
+      case let .screen2(child):
+        ShowView(store: child)
+          .navigationTitle("flowA screen2")
+      case let .screen3(child):
+        ShowView(store: child)
+          .navigationTitle("flowA screen3")
+      case let .screen4(child):
+        ShowView(store: child)
+          .navigationTitle("flowA screen4")
+      }
+    case let .flowB(flowB):
+      switch flowB.case {
+      case let .flowBA(flowBA):
+        switch flowBA.case {
+        case let .screen1(child):
+          ShowView(store: child)
+            .navigationTitle("flowBA screen1")
+        case let .screen2(child):
+          ShowView(store: child)
+            .navigationTitle("flowBA screen2")
+        }
+      case let .flowBB(flowBB):
+        switch flowBB.case {
+        case let .screen1(child):
+          EditView(store: child)
+            .navigationTitle("flowBB screen1")
+        }
+      }
     }
   }
 
   var body: some View {
-    NavigationStack(path: $store.scope(state: \.path, action: \.path)) {
-      TabView(selection: $store.selectedTab.sending(\.selectTab)) {
-        ShowView(store: store.scope(state: \.child1, action: \.child1))
-          .tag(Tab.tab1)
-          .tabItem {
-            Text("Tab1")
-          }
-        ShowView(store: store.scope(state: \.child2, action: \.child2))
-          .tag(Tab.tab2)
-          .tabItem {
-            Text("Tab2")
-          }
-      }
-      .navigationTitle(rootTitle)
-      .toolbar {
-        ToolbarItem {
-          Button {
-            store.send(.modal)
-          } label: {
-            Image(systemName: "person.circle.fill")
-          }
-        }
-      }
-      .sheet(
-        item: $store.scope(state: \.destination?.modal, action: \.destination.modal)) { modal in
-          EditView(store: modal)
-        }
-      } destination: { path in
-        switch path.case {
-        case let .flowA(flowA):
-          switch flowA.case {
-          case let .screen1(child):
-            ShowView(store: child)
-              .navigationTitle("flowA screen1")
-          case let .screen2(child):
-            ShowView(store: child)
-              .navigationTitle("flowA screen2")
-          case let .screen3(child):
-            ShowView(store: child)
-              .navigationTitle("flowA screen3")
-          case let .screen4(child):
-            ShowView(store: child)
-              .navigationTitle("flowA screen4")
-          }
-        case let .flowB(flowB):
-          switch flowB.case {
-          case let .flowBA(flowBA):
-            switch flowBA.case {
-            case let .screen1(child):
-              ShowView(store: child)
-                .navigationTitle("flowBA screen1")
-            case let .screen2(child):
-              ShowView(store: child)
-                .navigationTitle("flowBA screen2")
+    TabView(selection: $store.selectedTab.sending(\.selectTab)) {
+      NavigationStack(
+        path: $store.scope(state: \.paths[.tab1]!, action: \.path),
+        root: {
+          ShowView(store: store.scope(state: \.child1, action: \.child1))
+            .navigationTitle("Root Tab1")
+            .toolbar {
+              ToolbarItem {
+                Button {
+                  store.send(.modal)
+                } label: {
+                  Image(systemName: "person.circle.fill")
+                }
+              }
             }
-          case let .flowBB(flowBB):
-            switch flowBB.case {
-            case let .screen1(child):
-              EditView(store: child)
-                .navigationTitle("flowBB screen1")
-            }
-          }
-        }
+        },
+        destination: destination(path:)
+      )
+      .tag(Tab.tab1)
+      .tabItem {
+        Text("Tab1")
       }
 
+      NavigationStack(
+        path: $store.scope(state: \.paths[.tab2]!, action: \.path),
+        root: {
+          ShowView(store: store.scope(state: \.child2, action: \.child2))
+            .navigationTitle("Root Tab2")
+            .toolbar {
+              ToolbarItem {
+                Button {
+                  store.send(.modal)
+                } label: {
+                  Image(systemName: "person.circle.fill")
+                }
+              }
+            }
+        },
+        destination: destination(path:)
+      )
+      .tag(Tab.tab2)
+      .tabItem {
+        Text("Tab1")
+      }
+    }
+    .sheet(
+      item: $store.scope(state: \.destination?.modal, action: \.destination.modal)) { modal in
+        EditView(store: modal)
+      }
   }
 }
 
